@@ -23,4 +23,7 @@ trait StateMachineConstant {
 
   val REDIS_HOST = Conf.getString("redisHost")
   val REDIS_PORT = Conf.getInt("redisPort")
+
+  val SAMPLING_INTERVAL = Conf.getInt("samplingInterval")
+
 }

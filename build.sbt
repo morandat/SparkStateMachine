@@ -18,8 +18,8 @@ libraryDependencies ++= Seq(
 
   "org.apache.hadoop" % "hadoop-client" % "2.2.0",
 
-  "org.apache.spark" %% "spark-core" % "1.0.1" % "provided",
-  "org.apache.spark" %% "spark-streaming" % "1.0.1" % "provided",
+  "org.apache.spark" %% "spark-core" % "1.2.1" % "provided",
+  "org.apache.spark" %% "spark-streaming" % "1.2.1" % "provided",
   "com.typesafe.play" %% "play-json" % "2.4.0-M1",
   "org.json4s" %% "json4s-jackson" % "3.2.11",
   "net.debasishg" %% "redisclient" % "2.13"

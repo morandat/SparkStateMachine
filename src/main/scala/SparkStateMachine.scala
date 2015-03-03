@@ -2,29 +2,22 @@
  * Created by wbraik on 21/07/14.
  */
 
+import com.redis.RedisClient
+import org.apache.hadoop.io.{LongWritable, Text}
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat
 import org.apache.spark.SparkConf
-import org.apache.spark.rdd.{RDD, HadoopRDD}
-import org.apache.spark.streaming.dstream.InputDStream
+import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.StreamingContext._
-import org.apache.spark.streaming.{ Time, Milliseconds, StreamingContext }
-import scala.collection.mutable.Queue
-
+import org.apache.spark.streaming.dstream.{DStream, FDStream, InputDStream}
+import org.apache.spark.streaming.scheduler.{StreamingListener, StreamingListenerBatchCompleted, StreamingListenerBatchStarted, StreamingListenerBatchSubmitted}
+import org.apache.spark.streaming.{Milliseconds, StreamingContext, Time}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 
-import org.apache.hadoop.fs.{FileSystem, Path, PathFilter}
-import org.apache.hadoop.io.{LongWritable, Text}
-import org.apache.hadoop.mapreduce.lib.input.TextInputFormat
-import com.typesafe.config.Config
-
-import com.redis.RedisClient
+import scala.collection.mutable.Queue
 
 object SparkStateMachine extends StateMachineConstant {
 
-
-	val SAMPLING_INTERVAL = Conf.getInt("samplingInterval")
-
-  
   case class Event(ContactId: String, Action: String, TimeCreated: Int) // FIXME TimeCreated should be more complex
   
   val conf = new SparkConf()
@@ -32,12 +25,12 @@ object SparkStateMachine extends StateMachineConstant {
 	val ssc = new StreamingContext(conf, Milliseconds(SAMPLING_INTERVAL))
 
   def main(args: Array[String]): Unit = {
-
+//    ssc.addStreamingListener(new BatchMonitor)
     ssc.checkpoint(s"$HDFS_URI/Spark/Checkpoints")
     RedisKeys.flushAll(); // FIXME Move-me
 
 //  val events = new TextFileSeqAsStream(fileSequence(), ssc)
-    val events = ssc.textFileStream(HDFS_FULL_URI)
+    val events = textFileStream(ssc, HDFS_FULL_URI)
       .flatMap(_.split("\n"))
       .map(parseJSON _)
 
@@ -48,20 +41,24 @@ object SparkStateMachine extends StateMachineConstant {
     ssc.start()
     ssc.awaitTermination()
   }
-  
+
+  def textFileStream(ssc: StreamingContext, path: String): DStream[String] = {
+    new FDStream[LongWritable, Text, TextInputFormat](ssc, path).map(_._2.toString)
+  }
+
   def parseJSON(event: String): (String, Event) = {
-    implicit val formats = DefaultFormats
+    implicit val formats = DefaultFormats // for jackson
+
     val e = parse(event).extract[Event]
     (e.ContactId, e)
   }
 
   def updateFunction(newEvents: Seq[Event], previousState: Option[State]): Option[State] = {
-    
     if (!newEvents.isEmpty) {
       return newEvents.
         sortWith((e1, e2) => e1.TimeCreated < e2.TimeCreated).
         foldLeft(previousState) { (s, e) => nextState(e.Action, s) }
-    } else if (previousState.isEmpty){ // This case should never arise, maybe let's just fall back on the following state.get expction
+    } else if (previousState.isEmpty){ // This case should never arise, maybe let's just fall back on the following state.get exception
     	RedisKeys.NoSuchState.incr()
       return None
     } else {
@@ -75,7 +72,7 @@ object SparkStateMachine extends StateMachineConstant {
   }
   
 	def nextState(action: String, state: Option[State]): Option[State] = {
-		import RedisKeys._
+		import SparkStateMachine.RedisKeys._
 
 		val s = state.getOrElse(State(initialState, DefaultTimeout))
 		s.state match {
@@ -138,7 +135,7 @@ object SparkStateMachine extends StateMachineConstant {
 }
 
 class ClockStream(
-    tick: Long,
+    var tick: Long,
     ssc: StreamingContext)
 extends InputDStream[Long](ssc) {
 
@@ -146,8 +143,22 @@ extends InputDStream[Long](ssc) {
   override def stop() { }
   
 	override def compute(validTime: Time): Option[RDD[Long]] = {
-    tick += 1
+    tick = tick + 1
     Some(ssc.sparkContext.makeRDD(Seq(tick)))
+  }
+}
+
+class BatchMonitor extends StreamingListener {
+  override def onBatchSubmitted(batchSubmitted: StreamingListenerBatchSubmitted): Unit = {
+    print("Submitted: %d %d\n" format(batchSubmitted.batchInfo.processingStartTime.getOrElse(-1), batchSubmitted.batchInfo.processingEndTime.getOrElse(-1)))
+  }
+
+  override def onBatchStarted(batchStarted: StreamingListenerBatchStarted): Unit = {
+    print("Started: %d %d\n" format(batchStarted.batchInfo.processingStartTime.getOrElse(-1), batchStarted.batchInfo.processingEndTime.getOrElse(-1)))
+  }
+
+  override def onBatchCompleted(batchCompleted: StreamingListenerBatchCompleted): Unit = {
+    print("Completed: %d %d'\n" format(batchCompleted.batchInfo.processingStartTime.getOrElse(-1), batchCompleted.batchInfo.processingEndTime.getOrElse(-1)))
   }
 }
 

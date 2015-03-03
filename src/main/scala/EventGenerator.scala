@@ -1,13 +1,9 @@
-import java.io.{ PrintWriter, _ }
+import java.io.{PrintWriter, _}
 import java.net.URI
-import com.typesafe.config._
+
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{ FileSystem, Path, PathFilter }
-import scala.collection.mutable.ArrayBuffer
-import scala.util.Random
+import org.apache.hadoop.fs.{FileSystem, Path, PathFilter}
 import org.joda.time.DateTime
-import org.apache.spark.streaming.{ Time, Seconds }
-import scala.collection.mutable.Queue
 
 object EventGenerator extends StateMachineConstant {
 
@@ -25,7 +21,6 @@ object EventGenerator extends StateMachineConstant {
   val TMP_DIR = Conf.getString("tmpDir")
   
   val FILENAME_TEMPLATE = Conf.getString("filenameTemplate")
-  val SAMPLING_INTERVAL = Conf.getInt("samplingInterval")
 
   val HDFS = FileSystem.get(URI.create(HDFS_URI), new Configuration())
   
